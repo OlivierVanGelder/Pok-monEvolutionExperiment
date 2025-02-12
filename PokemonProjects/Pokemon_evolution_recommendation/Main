@@ -1,0 +1,202 @@
+# Import required libraries
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from evolution_chains import SPECIAL_CHAINS, get_evolution_chain
+
+# Read the Pokemon dataset from URL
+url = "https://gist.githubusercontent.com/armgilles/194bcff35001e7eb53a2a8b441e8b2c6/raw/92200bc0a673d5ce2110aaad4544ed6c4010f687/pokemon.csv"
+df = pd.read_csv(url)
+
+def get_evolution_recommendation(pokemon_name, pokemon_list, df):
+    """Generate detailed evolution recommendation with enhanced analysis"""
+    if len(pokemon_list) == 1:
+        return "This Pokemon has no evolutions."
+    
+    current_index = pokemon_list.index(pokemon_name)
+    if current_index == len(pokemon_list) - 1:
+        return "This is the final evolution."
+    
+    recommendations = []
+    current_stats = df[df['Name'].str.upper() == pokemon_name.upper()].iloc[0]
+    
+    # Analyze each remaining evolution
+    for i in range(current_index + 1, len(pokemon_list)):
+        next_evolution = pokemon_list[i]
+        next_stats = df[df['Name'].str.upper() == next_evolution.upper()].iloc[0]
+        
+        # Calculate individual stat changes
+        stat_changes = {
+            'HP': next_stats['HP'] - current_stats['HP'],
+            'Attack': next_stats['Attack'] - current_stats['Attack'],
+            'Defense': next_stats['Defense'] - current_stats['Defense'],
+            'Sp. Atk': next_stats['Sp. Atk'] - current_stats['Sp. Atk'],
+            'Sp. Def': next_stats['Sp. Def'] - current_stats['Sp. Def'],
+            'Speed': next_stats['Speed'] - current_stats['Speed']
+        }
+        
+        # Enhanced analysis sections
+        benefits = []
+        drawbacks = []
+        
+        # Offensive analysis
+        offensive_change = stat_changes['Attack'] + stat_changes['Sp. Atk']
+        if offensive_change > 30:
+            benefits.append(f"Strong offensive improvement (+{offensive_change} total attack)")
+        elif offensive_change < 0:
+            drawbacks.append(f"Decreased offensive capability ({offensive_change} total attack)")
+        
+        # Defensive analysis
+        defensive_change = stat_changes['Defense'] + stat_changes['Sp. Def'] + stat_changes['HP']
+        if defensive_change > 45:
+            benefits.append(f"Major defensive boost (+{defensive_change} total bulk)")
+        elif defensive_change > 20:
+            benefits.append(f"Improved survivability (+{defensive_change} total bulk)")
+        
+        # Speed analysis
+        if stat_changes['Speed'] > 20:
+            benefits.append(f"Significant speed boost (+{stat_changes['Speed']})")
+        elif stat_changes['Speed'] > 0:
+            benefits.append(f"Slight speed improvement (+{stat_changes['Speed']})")
+        elif stat_changes['Speed'] < 0:
+            drawbacks.append(f"Speed decrease ({stat_changes['Speed']})")
+        
+        # Type change analysis
+        if (next_stats['Type 1'] != current_stats['Type 1'] or 
+            next_stats['Type 2'] != current_stats['Type 2']):
+            old_type = current_stats['Type 1']
+            if pd.notna(current_stats['Type 2']):
+                old_type += f"/{current_stats['Type 2']}"
+            new_type = next_stats['Type 1']
+            if pd.notna(next_stats['Type 2']):
+                new_type += f"/{next_stats['Type 2']}"
+            benefits.append(f"Type change: {old_type} → {new_type}")
+        
+        # Calculate total stat change
+        total_change = sum(stat_changes.values())
+        
+        # Generate recommendation
+        evolution_text = f"Evolution to {next_evolution}:"
+        
+        # Strategic recommendation
+        if not drawbacks:
+            strategy = "✓ Recommended to evolve - clear improvements across stats"
+        elif total_change > 40:
+            strategy = "○ Consider evolving - good improvements despite some drawbacks"
+        else:
+            strategy = "⚠ Carefully consider evolution - mixed changes in stats"
+        
+        # Format the output
+        output = [evolution_text]
+        output.append(f"• Total stat change: +{total_change}")
+        
+        if benefits:
+            output.append("\nBenefits:")
+            for benefit in benefits:
+                output.append(f"✓ {benefit}")
+        
+        if drawbacks:
+            output.append("\nDrawbacks:")
+            for drawback in drawbacks:
+                output.append(f"⚠ {drawback}")
+        
+        output.append(f"\nRecommendation: {strategy}")
+        
+        recommendations.append("\n".join(output))
+    
+    return "\n\n".join(recommendations)
+
+def main():
+    while True:
+        # Get Pokemon name from user
+        pokemon_name = input("Enter a Pokemon name (or 'quit' to exit): ").title()
+        
+        if pokemon_name.lower() == 'quit':
+            break
+
+        # Check if Pokemon exists in dataset
+        if pokemon_name.upper() not in df['Name'].str.upper().values:
+            print(f"Error: {pokemon_name} not found in dataset!")
+            continue
+
+        # Get evolution chain using the proper function
+        pokemon_list = get_evolution_chain(pokemon_name)
+        if not pokemon_list:
+            pokemon_list = [pokemon_name.upper()]
+
+        # Handle branching evolutions
+        if any(isinstance(x, list) for x in pokemon_list):
+            # For visualization, we'll use the first branch if there are multiple options
+            flat_list = []
+            for item in pokemon_list:
+                if isinstance(item, list):
+                    flat_list.append(item[0])  # Take first option from branch
+                else:
+                    flat_list.append(item)
+            pokemon_list = flat_list
+
+        # Create figure with smaller size
+        plt.figure(figsize=(6, 4))
+
+        # Create subplot with adjusted height ratio
+        plt.subplot2grid((3, 1), (0, 0), rowspan=2)
+
+        # Stats to display
+        stats = ['HP', 'Attack', 'Defense', 'Sp. Atk', 'Sp. Def', 'Speed']
+
+        # Colors for each evolution stage
+        colors = ['#A8E6CF', '#FFD3B6', '#FF8B94']
+
+        # Create stacked bar plot
+        bottom = None
+        for i, pokemon in enumerate(pokemon_list):
+            pokemon_data = df[df['Name'].str.upper() == pokemon].iloc[0]
+            values = [pokemon_data[stat] for stat in stats]
+            
+            if i == 0:
+                # Base form
+                bars = plt.bar(stats, values, label=pokemon.title(), color=colors[i % len(colors)])
+                bottom = values
+            else:
+                # Evolution forms - show only the increase from previous form
+                prev_pokemon_data = df[df['Name'].str.upper() == pokemon_list[i-1]].iloc[0]
+                prev_values = [prev_pokemon_data[stat] for stat in stats]
+                diff_values = [max(0, curr - prev) for curr, prev in zip(values, prev_values)]
+                bars = plt.bar(stats, diff_values, bottom=bottom, label=pokemon.title(), 
+                              color=colors[i % len(colors)])
+                bottom = [sum(x) for x in zip(bottom, diff_values)]
+
+            # Add value labels for total height
+            for j, bar in enumerate(bars):
+                plt.text(bar.get_x() + bar.get_width()/2., values[j],
+                        f'{int(values[j])}',
+                        ha='center', va='bottom', fontsize=6)
+
+        # Customize the plot
+        plt.title(f"Stats for {pokemon_name} Evolution Line", fontsize=8)
+        plt.xticks(rotation=45, fontsize=6)
+        plt.yticks(fontsize=6)
+        plt.legend(fontsize=6)
+        
+        # Add recommendation in bottom third of figure with better formatting
+        recommendation = get_evolution_recommendation(pokemon_name.upper(), pokemon_list, df)
+        plt.subplot2grid((3, 1), (2, 0))
+        plt.axis('off')
+        
+        # Adjust text properties for better visibility
+        plt.text(0.02, 1.0, recommendation, 
+                 ha='left', va='top',
+                 fontsize=7,
+                 linespacing=1.3,
+                 bbox=dict(facecolor='white', alpha=0.8, edgecolor='none'),
+                 transform=plt.gca().transAxes,
+                 wrap=True)
+
+        # Adjust layout with more space for text
+        plt.subplots_adjust(bottom=0.2, hspace=0.4)
+        plt.show()
+
+    print("Thanks for using the Pokemon Stats Viewer!")
+
+if __name__ == "__main__":
+    main() 
